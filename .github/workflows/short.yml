@@ -1,0 +1,70 @@
+name: Gerar Short
+on:
+  workflow_dispatch:
+jobs:
+  short:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar dependências
+        run: |
+          pip install piper-tts
+          curl -L -o pt_BR-faber-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx
+          curl -L -o pt_BR-faber-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json
+      - name: Gerar narração, legendas e vídeo
+        run: |
+          python3 - <<'PY'
+          import subprocess
+
+          sentences = [
+              "Cientistas descobriram mais de mil animais que ninguém conhecia.",
+              "Foram mil cento e vinte e um espécies novas em um só ano. Um recorde!",
+              "Mas o mais louco: a maioria nem foi encontrada agora.",
+              "Setecentas e vinte e oito estavam esquecidas em gavetas e coleções de museus, esperando alguém identificar.",
+              "Em média, passam mais de treze anos entre coletar um bicho e dar nome a ele.",
+              "Teve quimera, o tubarão-fantasma, e vermes transparentes vivendo dentro de uma esponja de vidro.",
+              "E menos de zero vírgula zero zero um por cento do fundo do mar já foi visto diretamente por cientistas.",
+              "Ainda existe um mundo inteiro escondido no nosso planeta.",
+              "Qual bicho você queria que fosse descoberto? Comenta aí!",
+          ]
+
+          # 1. Narração em português (Piper)
+          subprocess.run(
+              ["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx",
+               "--output_file", "narracao.wav"],
+              input="\n".join(sentences).encode(), check=True)
+
+          # 2. Duração real do áudio
+          dur = float(subprocess.check_output(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+               "-of", "csv=p=0", "narracao.wav"]).decode().strip())
+
+          # 3. Legendas: divide o tempo pelo número de palavras de cada frase
+          def fmt(x):
+              h = int(x // 3600); m = int(x % 3600 // 60); s = x % 60
+              return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+          words = [len(s.split()) for s in sentences]
+          total = sum(words)
+          t = 0.0
+          blocks = []
+          for i, (s, w) in enumerate(zip(sentences, words), 1):
+              d = dur * w / total
+              blocks.append(f"{i}\n{fmt(t)} --> {fmt(t + d)}\n{s}\n")
+              t += d
+          open("legenda.srt", "w", encoding="utf-8").write("\n".join(blocks))
+
+          # 4. Vídeo vertical 1080x1920 com fundo azul, áudio e legendas
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-f", "lavfi", "-i", f"color=c=0x06122e:s=1080x1920:r=30:d={dur}",
+              "-i", "narracao.wav",
+              "-vf", "subtitles=legenda.srt:force_style='Fontsize=16,Alignment=2,MarginV=260,Bold=1,Outline=3'",
+              "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "short.mp4"], check=True)
+          print("pronto: short.mp4", round(dur, 1), "segundos")
+          PY
+      - name: Guardar o vídeo
+        uses: actions/upload-artifact@v4
+        with:
+          name: short-01
+          path: short.mp4
