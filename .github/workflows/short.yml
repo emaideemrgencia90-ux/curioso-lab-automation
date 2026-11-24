@@ -59,7 +59,7 @@ jobs:
               "ffmpeg", "-y",
               "-f", "lavfi", "-i", f"color=c=0x06122e:s=1080x1920:r=30:d={dur}",
               "-i", "narracao.wav",
-              "-vf", "subtitles=legenda.srt:force_style='Fontsize=16,Alignment=2,MarginV=260,Bold=1,Outline=3'",
+              "-vf", "subtitles=legenda.srt:force_style='Fontsize=16,Alignment=2,MarginV=50,Bold=1,Outline=3'",
               "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
               "-c:a", "aac", "short.mp4"], check=True)
           print("pronto: short.mp4", round(dur, 1), "segundos")
