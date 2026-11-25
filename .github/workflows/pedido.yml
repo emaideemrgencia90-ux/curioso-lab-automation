@@ -1,0 +1,70 @@
+name: Gerar Pedido de Inscrição
+on:
+  workflow_dispatch:
+jobs:
+  pedido:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositório (pega o fundo.mp4)
+        uses: actions/checkout@v4
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install piper-tts
+          curl -L -o pt_BR-faber-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx
+          curl -L -o pt_BR-faber-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json
+      - name: Gerar narração, legenda e vídeo
+        run: |
+          python3 - <<'PY'
+          import re, subprocess
+
+          texto = """
+          Gostou do vídeo? Então dá uma passadinha no canal. O link está no comentário. Obrigado por assistir.
+          """
+
+          frases = [f.strip() for f in re.split(r"(?<=[.!?])\s+", " ".join(texto.split())) if f.strip()]
+
+          subprocess.run(
+              ["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx",
+               "--output_file", "narracao.wav"],
+              input="\n".join(frases).encode(), check=True)
+
+          dur = float(subprocess.check_output(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+               "-of", "csv=p=0", "narracao.wav"]).decode().strip())
+
+          def fmt(x):
+              h = int(x // 3600); m = int(x % 3600 // 60); s = x % 60
+              return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+          pedacos = []
+          for f in frases:
+              p = f.split()
+              for i in range(0, len(p), 8):
+                  pedacos.append(" ".join(p[i:i + 8]))
+          pesos = [len(p.split()) for p in pedacos]
+          total = sum(pesos)
+          t = 0.0
+          blocos = []
+          for i, (p, w) in enumerate(zip(pedacos, pesos), 1):
+              d = dur * w / total
+              blocos.append(f"{i}\n{fmt(t)} --> {fmt(t + d)}\n{p}\n")
+              t += d
+          open("legenda.srt", "w", encoding="utf-8").write("\n".join(blocos))
+
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-stream_loop", "-1", "-i", "fundo.mp4",
+              "-i", "narracao.wav",
+              "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,subtitles=legenda.srt:force_style='Fontsize=16,Alignment=2,MarginV=50,Bold=1,Outline=3'[v]",
+              "-map", "[v]", "-map", "1:a",
+              "-t", str(dur), "-shortest",
+              "-c:v", "libx264", "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "pedido.mp4"], check=True)
+          print("pronto: pedido.mp4", round(dur, 1), "segundos")
+          PY
+      - name: Guardar o vídeo
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedido-inscricao
+          path: pedido.mp4
