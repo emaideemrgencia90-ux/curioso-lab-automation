@@ -1,0 +1,138 @@
+name: Universo Completo
+on:
+  workflow_dispatch:
+jobs:
+  universo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install piper-tts
+          curl -L -o pt_BR-faber-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx
+          curl -L -o pt_BR-faber-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json
+      - name: Gerar narração, legendas e vídeo
+        run: |
+          python3 - <<'PY'
+          import subprocess
+
+          sentences = [
+              "Você já parou para pensar no tamanho de tudo isso?",
+              "Tudo o que existe, das estrelas aos seus pés, faz parte de uma coisa só: o universo.",
+              "A ciência já sabe bastante sobre ele, mas, como você vai ver, ainda sabe muito pouco sobre o que ele realmente é.",
+              "Vamos começar pela idade.",
+              "O universo tem cerca de 13,8 bilhões de anos.",
+              "Esse número saiu de um mapa da luz mais antiga que existe, chamada radiação cósmica de fundo.",
+              "Ela foi emitida cerca de 370 mil anos depois do Big Bang, quando o universo esfriou o suficiente para a luz conseguir viajar.",
+              "O mapa foi feito pelo telescópio Planck, da Agência Espacial Europeia.",
+              "Antes dessa medição, as estimativas eram cerca de 100 milhões de anos mais antigas.",
+              "Isso é normal na ciência: uma conta boa hoje pode ser refinada amanhã.",
+              "Agora, do que o universo é feito?",
+              "Só cerca de 4,9% é matéria comum, aquela que forma estrelas, planetas, o ar, a água e os seres vivos, incluindo você.",
+              "Outros 26,8% são matéria escura, que não emite nem absorve luz.",
+              "A gente só percebe sua presença pela força da gravidade que ela exerce sobre estrelas e galáxias.",
+              "E os 68,3% restantes são energia escura, que parece empurrar o universo para uma expansão cada vez mais rápida.",
+              "Ou seja, quase tudo o que existe é algo que a gente ainda não entende direito.",
+              "Em 1929, o astrônomo Edwin Hubble percebeu que as galáxias se afastam umas das outras.",
+              "Quanto mais distante está uma galáxia, mais rápido ela se afasta.",
+              "Isso mostra que o universo está se expandindo.",
+              "Se a gente volta no tempo, chega a um começo muito quente e muito denso, o Big Bang.",
+              "E o Big Bang não foi uma explosão no meio do espaço.",
+              "Foi a expansão do próprio espaço, que estava em toda parte.",
+              "Vamos voltar ao começo de tudo.",
+              "Nos primeiríssimos instantes, o universo passou por uma fase chamada inflação cósmica.",
+              "Nessa fase, o universo cresceu de um jeito extremamente rápido.",
+              "Segundo a NASA, ele aumentou mais de um trilhão de trilhões de vezes, em menos de um trilionésimo de trilionésimo de segundo.",
+              "É tão rápido que fica difícil imaginar.",
+              "Por que isso importa? Porque as pequenas diferenças de densidade criadas nessa fase são as sementes das galáxias.",
+              "Sem elas, o universo seria quase uniforme, sem estrelas nem planetas.",
+              "A maior parte dessa história vem da luz mais antiga do universo, a radiação cósmica de fundo.",
+              "Ela mostra pequenas variações de temperatura que combinam com o que a inflação prevê.",
+              "Mesmo assim, a inflação ainda é uma teoria.",
+              "Ninguém viu essa expansão acontecer.",
+              "O que a causou é uma das perguntas abertas da ciência.",
+              "Vamos voltar no tempo.",
+              "Depois do Big Bang, o universo era um mar quente de hidrogênio e hélio.",
+              "Ele levou um tempo para esfriar, e só depois surgiram as primeiras estrelas.",
+              "Essas estrelas apareceram cerca de 100 milhões de anos depois do Big Bang.",
+              "Elas eram muito diferentes das estrelas de hoje.",
+              "Não tinham elementos pesados, como carbono, oxigênio e ferro, porque esses elementos só são criados dentro das estrelas.",
+              "Ou seja, as primeiras estrelas foram as fábricas que produziram esses elementos.",
+              "Muitas dessas estrelas eram enormes, com dezenas a centenas de vezes a massa do Sol.",
+              "As maiores brilhavam com a energia de milhões de sóis.",
+              "Mas elas viviam pouco.",
+              "Uma estrela muito grande pode durar menos de 1 milhão de anos, enquanto o Sol vai durar bilhões.",
+              "Quando essas estrelas morriam, algumas explodiam em supernovas e espalhavam elementos pesados pelo espaço.",
+              "Outras podiam virar buracos negros.",
+              "A luz dessas primeiras estrelas também teve um papel importante: ela ajudou a deixar o universo transparente à luz, pondo fim a uma época escura.",
+              "Com o tempo, essas estrelas se juntaram em grupos, e surgiram as primeiras galáxias.",
+              "As galáxias antigas mais distantes que conhecemos existiam cerca de 400 milhões de anos depois do Big Bang.",
+              "E quantas galáxias existem?",
+              "Segundo o astrofísico Mario Livio, o universo observável deve ter entre 100 e 200 bilhões de galáxias.",
+              "Um número difícil de imaginar.",
+              "Agora vamos para perto de casa.",
+              "A nossa galáxia se chama Via Láctea.",
+              "Ela tem cerca de 100 mil anos-luz de diâmetro, e a luz levaria 100 mil anos para atravessá-la de uma ponta a outra.",
+              "Dentro dela, há cerca de 100 bilhões de estrelas.",
+              "Esse número é uma estimativa, porque contar estrelas por dentro da própria galáxia é muito difícil.",
+              "O Sol é só uma dessas estrelas, em um braço da galáxia.",
+              "Em volta dele giram os planetas, incluindo a Terra.",
+              "Mas o Sistema Solar não está sozinho.",
+              "Já descobrimos planetas girando em torno de outras estrelas, chamados exoplanetas.",
+              "Em setembro de 2025, a NASA anunciou 6 mil exoplanetas confirmados.",
+              "E há mais de 8 mil candidatos esperando confirmação.",
+              "A NASA também diz que planetas rochosos parecem ser mais comuns do que os gigantes gasosos.",
+              "Mas ainda não sabemos quantos desses planetas são parecidos com a Terra.",
+              "Um buraco negro é uma região do espaço onde a gravidade é tão forte que nem a luz consegue escapar.",
+              "Os cientistas acreditam que existem buracos negros gigantes no centro de muitas galáxias.",
+              "Em 14 de setembro de 2015, os dois detectores do observatório LIGO, nos Estados Unidos, registraram algo inédito: ondas gravitacionais.",
+              "Elas são ondulações no próprio espaço-tempo, previstas por Albert Einstein há cerca de 100 anos.",
+              "A origem foi a fusão de dois buracos negros, com cerca de 29 e 36 vezes a massa do Sol.",
+              "Eles giravam um ao redor do outro, perdendo energia, até colidirem a quase metade da velocidade da luz.",
+              "O sinal levou cerca de 1,3 bilhão de anos para chegar até nós.",
+              "Pense nisso: a onda começou a viajar muito antes de existirem seres humanos na Terra, e só agora alguém conseguiu escutá-la.",
+              "Agora, o recado final desta série.",
+              "Sabemos a idade do universo, do que ele é feito e como as primeiras estrelas surgiram.",
+              "Mas quase 95% do universo é feito de matéria escura e energia escura, e ninguém sabe ainda o que elas são.",
+              "Essa talvez seja a maior pergunta da ciência de hoje.",
+              "Se você pudesse escolher uma pergunta para a ciência responder, qual seria? Comenta aí.",
+          ]
+
+          subprocess.run(
+              ["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx",
+               "--output_file", "narracao.wav"],
+              input="\n".join(sentences).encode(), check=True)
+
+          dur = float(subprocess.check_output(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+               "-of", "csv=p=0", "narracao.wav"]).decode().strip())
+
+          def fmt(x):
+              h = int(x // 3600); m = int(x % 3600 // 60); s = x % 60
+              return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+          words = [len(s.split()) for s in sentences]
+          total = sum(words)
+          t = 0.0
+          blocks = []
+          for i, (s, w) in enumerate(zip(sentences, words), 1):
+              d = dur * w / total
+              blocks.append(f"{i}\n{fmt(t)} --> {fmt(t + d)}\n{s}\n")
+              t += d
+          open("legenda.srt", "w", encoding="utf-8").write("\n".join(blocks))
+
+          fundo = "gradients=s=1920x1080:c0=0x06122e:c1=0x0a3a7a:c2=0x000000:speed=0.01:rate=30:duration=" + str(dur)
+          estilo = "subtitles=legenda.srt:force_style='Fontsize=14,Alignment=2,MarginV=40,Bold=1,Outline=3'"
+
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-f", "lavfi", "-i", fundo,
+              "-i", "narracao.wav",
+              "-vf", estilo,
+              "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "universo-completo.mp4"], check=True)
+          print("pronto: universo-completo.mp4", round(dur / 60, 2), "minutos")
+          PY
+      - name: Guardar o vídeo
+        uses: actions/upload-artifact@v4
+        with:
