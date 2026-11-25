@@ -1,0 +1,60 @@
+name: Gerar Short Céu Azul
+on:
+  workflow_dispatch:
+jobs:
+  short:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install piper-tts
+          curl -L -o pt_BR-faber-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx
+          curl -L -o pt_BR-faber-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json
+      - name: Gerar narração, legendas e vídeo
+        run: |
+          python3 - <<'PY'
+          import subprocess
+
+          sentences = [
+              "Por que o céu é azul?",
+              "A luz do sol parece branca, mas ela é feita de todas as cores juntas.",
+              "Quando essa luz entra na atmosfera, ela bate nas moléculas do ar.",
+              "As cores de comprimento de onda curto, como o azul, se espalham muito mais que as outras.",
+              "Por isso enxergamos o céu azul.",
+              "Já no pôr do sol, a luz atravessa mais ar, e sobram os tons de laranja e vermelho.",
+              "Curtiu? Comenta aí!",
+          ]
+
+          # 1. Narração em português (Piper)
+          subprocess.run(
+              ["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx",
+               "--output_file", "narracao.wav"],
+              input="\n".join(sentences).encode(), check=True)
+
+          # 2. Duração real do áudio
+          dur = float(subprocess.check_output(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+               "-of", "csv=p=0", "narracao.wav"]).decode().strip())
+
+          # 3. Legendas: divide o tempo pelo número de palavras de cada frase
+          def fmt(x):
+              h = int(x // 3600); m = int(x % 3600 // 60); s = x % 60
+              return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+          words = [len(s.split()) for s in sentences]
+          total = sum(words)
+          t = 0.0
+          blocks = []
+          for i, (s, w) in enumerate(zip(sentences, words), 1):
+              d = dur * w / total
+              blocks.append(f"{i}\n{fmt(t)} --> {fmt(t + d)}\n{s}\n")
+              t += d
+          open("legenda.srt", "w", encoding="utf-8").write("\n".join(blocks))
+
+          # 4. Vídeo vertical 1080x1920 com fundo azul, áudio e legendas
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-f", "lavfi", "-i", f"gradients=s=1080x1920:c0=0x06122e:c1=0x0a3a7a:c2=0x000000:speed=0.01:rate=30:duration={dur}",
+              "-i", "narracao.wav",
+              "-vf", "
