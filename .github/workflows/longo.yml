@@ -1,0 +1,82 @@
+name: Gerar Vídeo Longo
+on:
+  workflow_dispatch:
+jobs:
+  longo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install piper-tts
+          curl -L -o pt_BR-faber-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx
+          curl -L -o pt_BR-faber-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json
+      - name: Gerar narração, legendas e vídeo longo
+        run: |
+          python3 - <<'PY'
+          import re, subprocess
+
+          texto = """
+          Em um único ano, cientistas descreveram mil cento e vinte e um animais marinhos que eram totalmente novos para a ciência. Só que o mais curioso nem é o número. É de onde eles vieram. A maioria não saiu de uma expedição nova, no fundo de um oceano distante. Já estava guardada, esperando alguém ter tempo de olhar com atenção.
+
+          O balanço é do Ocean Census, um projeto global financiado pela Nippon Foundation, em parceria com a Nekton. Ele cobre o período de meados de dois mil e vinte e cinco a meados de dois mil e vinte e seis. Foram treze expedições e nove oficinas de descoberta, de mares polares a mares tropicais. E o resultado é cinquenta e quatro por cento maior do que o do ano anterior. Um recorde.
+
+          Agora vem a parte que surpreende. Das mil cento e vinte e uma espécies, setecentas e vinte e oito foram identificadas por equipes que vasculharam arquivos de museus e as próprias coleções. Ou seja, o animal já tinha sido coletado, às vezes anos antes. Um exemplo é uma anêmona-do-mar que vive enterrada no sedimento. Os pesquisadores a coletaram pela primeira vez em dois mil e dez. Só agora ela pôde ser descrita como uma espécie nova. E isso é bem comum. Em média, passam mais de treze anos entre coletar um animal e descrevê-lo oficialmente.
+
+          Por que demora tanto? Porque dar nome a uma espécie dá trabalho. Os cientistas analisam o animal no microscópio, fazem exames de imagem, dissecação e testes de DNA, e ainda produzem desenhos e descrições detalhadas. Isso exige especialista. Só quem conhece muito bem aquele grupo percebe que ali existe algo novo. E há um risco: com tanta espera, uma espécie pode desaparecer antes de ser catalogada.
+
+          E que bichos são esses? Um deles é uma quimera, o chamado tubarão-fantasma, encontrada no Parque Marinho do Mar de Coral, na Austrália. As quimeras são parentes distantes de tubarões e raias. No Japão, num submersível tripulado, os pesquisadores encontraram esponjas de vidro, cujo esqueleto é feito de sílica. Dentro de uma delas, a cerca de oitocentos metros de profundidade, viviam vermes transparentes de uma espécie nova. Em Timor-Leste, apareceram vermes listrados de laranja e roxo, e os pesquisadores suspeitam que tenham toxinas que podem inspirar novos tratamentos. E não precisa ir longe para encontrar novidade: um camarão de listras laranja apareceu numa caverna marinha perto de Marselha, na França.
+
+          Tudo isso mostra o tamanho do que ainda não sabemos. Uma estimativa de dois mil e onze dizia que até noventa e um por cento das espécies marinhas ainda não tinham sido descobertas. E menos de zero vírgula zero zero um por cento do fundo do mar já foi visto diretamente por cientistas.
+
+          O recado deste ano é animador. Parte da resposta pode já estar guardada, em coleções que ninguém teve tempo de abrir. Se você pudesse escolher, que tipo de bicho gostaria que fosse descoberto? Conta aqui nos comentários.
+          """
+
+          # Frases e pedaços curtos para legenda
+          frases = [f.strip() for f in re.split(r"(?<=[.!?])\s+", " ".join(texto.split())) if f.strip()]
+
+          # 1. Narração
+          subprocess.run(
+              ["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx",
+               "--output_file", "narracao.wav"],
+              input="\n".join(frases).encode(), check=True)
+
+          dur = float(subprocess.check_output(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+               "-of", "csv=p=0", "narracao.wav"]).decode().strip())
+
+          # 2. Legendas em pedaços de até 10 palavras, tempo proporcional às palavras
+          def fmt(x):
+              h = int(x // 3600); m = int(x % 3600 // 60); s = x % 60
+              return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+          pedacos = []
+          for f in frases:
+              p = f.split()
+              for i in range(0, len(p), 10):
+                  pedacos.append(" ".join(p[i:i + 10]))
+          pesos = [len(p.split()) for p in pedacos]
+          total = sum(pesos)
+          t = 0.0
+          blocos = []
+          for i, (p, w) in enumerate(zip(pedacos, pesos), 1):
+              d = dur * w / total
+              blocos.append(f"{i}\n{fmt(t)} --> {fmt(t + d)}\n{p}\n")
+              t += d
+          open("legenda.srt", "w", encoding="utf-8").write("\n".join(blocos))
+
+          # 3. Vídeo 16:9 1920x1080 com fundo em movimento, áudio e legendas
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-f", "lavfi", "-i", f"gradients=s=1920x1080:c0=0x06122e:c1=0x0a3a7a:c2=0x000000:speed=0.01:rate=30:duration={dur}",
+              "-i", "narracao.wav",
+              "-vf", "subtitles=legenda.srt:force_style='Fontsize=14,Alignment=2,MarginV=40,Bold=1,Outline=3'",
+              "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "longo.mp4"], check=True)
+          print("pronto: longo.mp4", round(dur / 60, 2), "minutos")
+          PY
+      - name: Guardar o vídeo
+        uses: actions/upload-artifact@v4
+        with:
+          name: longo-01
+          path: longo.mp4
