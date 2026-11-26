@@ -2,7 +2,7 @@ name: Autorizar YouTube
 on:
   workflow_dispatch:
     inputs:
-      codigo:http://localhost/?iss=https://accounts.google.com&code=4/0AUn6Hd-sRwFgYBnePogu5AHub9ogULBz24veyGXM1-iYbGltK9Gjjm2nVLgbepO6ZA6tQQ&scope=https://www.googleapis.com/auth/youtube.upload
+      codigo:
         description:
         required: false
         default: ""
