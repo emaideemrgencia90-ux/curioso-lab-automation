@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       codigo:
-        description: "Deixe vazio na 1a vez. Na 2a, cole o codigo do link"
+        description:
         required: false
         default: ""
 jobs:
