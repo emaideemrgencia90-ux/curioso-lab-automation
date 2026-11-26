@@ -1,0 +1,47 @@
+name: Autorizar YouTube
+on:
+  workflow_dispatch:
+    inputs:
+      codigo:
+        description: "Deixe vazio na 1a vez. Na 2a, cole o codigo do link"
+        required: false
+        default: ""
+jobs:
+  autorizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gerar link ou trocar codigo
+        env:
+          CLIENT_JSON: ${{ secrets.YOUTUBE_CLIENT_JSON }}
+          CODIGO: ${{ inputs.codigo }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          cfg = json.loads(os.environ["CLIENT_JSON"])
+          dados = cfg.get("installed") or cfg.get("web")
+          cid = dados["client_id"]
+          sec = dados["client_secret"]
+          codigo = os.environ.get("CODIGO", "").strip()
+          if not codigo:
+              params = urllib.parse.urlencode({
+                  "client_id": cid,
+                  "redirect_uri": "http://localhost",
+                  "response_type": "code",
+                  "scope": "https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.upload",
+                  "access_type": "offline",
+                  "prompt": "consent",
+              })
+              print("ABRA ESTE LINK NO TABLET:")
+              print("https://accounts.google.com/o/oauth2/auth?" + params)
+          else:
+              corpo = urllib.parse.urlencode({
+                  "code": codigo,
+                  "client_id": cid,
+                  "client_secret": sec,
+                  "redirect_uri": "http://localhost",
+                  "grant_type": "authorization_code",
+              }).encode()
+              resp = json.loads(urllib.request.urlopen("https://oauth2.googleapis.com/token", corpo).read())
+              print("REFRESH TOKEN (copie e guarde como segredo YOUTUBE_REFRESH_TOKEN):")
+              print(resp.get("refresh_token", "NAO VEIO: " + str(resp)))
+          PY
