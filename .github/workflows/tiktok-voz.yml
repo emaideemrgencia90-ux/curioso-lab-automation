@@ -1,0 +1,68 @@
+name: Gerar TikTok Autocontrole
+on:
+  workflow_dispatch:
+jobs:
+  tiktok:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+          pip install piper-tts
+          curl -L -o pt_BR-faber-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx
+          curl -L -o pt_BR-faber-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json
+      - name: Gerar narração e vídeo
+        run: |
+          python3 - <<'PY'
+          import subprocess, textwrap
+
+          sentences = [
+              "Esse impulso que aparece do nada não é fraqueza.",
+              "É o seu cérebro pedindo recompensa rápida.",
+              "Ele passa sozinho em uns dez minutos se você não agir.",
+              "Muda de ambiente, sai do celular e faz algo com as mãos.",
+              "Repetir isso cria um hábito novo.",
+              "E a força do impulso diminui com o tempo.",
+              "Salva esse vídeo para o próximo impulso.",
+          ]
+
+          subprocess.run(
+              ["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx",
+               "--output_file", "narracao.wav"],
+              input="\n".join(sentences).encode(), check=True)
+
+          dur = float(subprocess.check_output(
+              ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+               "-of", "csv=p=0", "narracao.wav"]).decode().strip())
+
+          words = [len(s.split()) for s in sentences]
+          total = sum(words)
+          t = 0.0
+          filtros = []
+          for i, (s, w) in enumerate(zip(sentences, words)):
+              d = dur * w / total
+              open(f"frase{i}.txt", "w", encoding="utf-8").write("\n".join(textwrap.wrap(s, 16)))
+              filtros.append(
+                  "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+                  f":textfile=frase{i}.txt:fontsize=78:fontcolor=0x111111"
+                  ":box=1:boxcolor=0xffc93c@1:boxborderw=34:line_spacing=12"
+                  ":x=(w-text_w)/2:y=(h-text_h)/2"
+                  f":enable='between(t,{t:.2f},{t + d:.2f})'")
+              t += d
+
+          fundo = "gradients=s=1080x1920:c0=0x06122e:c1=0x0a3a7a:c2=0x000000:speed=0.01:rate=30:duration=" + str(dur)
+
+          subprocess.run([
+              "ffmpeg", "-y",
+              "-f", "lavfi", "-i", fundo,
+              "-i", "narracao.wav",
+              "-vf", ",".join(filtros),
+              "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "tiktok-voz.mp4"], check=True)
+          print("pronto: tiktok-voz.mp4", round(dur, 1), "segundos")
+          PY
+      - name: Guardar o vídeo
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-voz
+          path: tiktok-voz.mp4
