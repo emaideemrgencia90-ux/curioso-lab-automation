@@ -1,71 +1,273 @@
-name: Gerar Short
+name: Gerar Shorts com voz
 on:
   workflow_dispatch:
 jobs:
-  short:
+  shorts:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Instalar dependências
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install piper-tts
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+          pip install piper-tts pillow numpy
           curl -L -o pt_BR-faber-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx
           curl -L -o pt_BR-faber-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json
-      - name: Gerar narração, legendas e vídeo
+      - name: Gerar os dois Shorts com narração
         run: |
           python3 - <<'PY'
-          import subprocess
+          import math, os, subprocess, wave
+          import numpy as np
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 
-          sentences = [
-              "Cientistas descobriram mais de mil animais que ninguém conhecia.",
-              "Foram mil cento e vinte e um espécies novas em um só ano. Um recorde!",
-              "Mas o mais louco: a maioria nem foi encontrada agora.",
-              "Setecentas e vinte e oito estavam esquecidas em gavetas e coleções de museus, esperando alguém identificar.",
-              "Em média, passam mais de treze anos entre coletar um bicho e dar nome a ele.",
-              "Teve quimera, o tubarão-fantasma, e vermes transparentes vivendo dentro de uma esponja de vidro.",
-              "E menos de zero vírgula zero zero um por cento do fundo do mar já foi visto diretamente por cientistas.",
-              "Ainda existe um mundo inteiro escondido no nosso planeta.",
-              "Qual bicho você queria que fosse descoberto? Comenta aí!",
+          W, H = 1080, 1920
+          FONT_CANDIDATES = [
+              os.environ.get("FONT_FILE", ""),
+              "/usr/share/fonts/opentype/inter/Inter-ExtraBold.otf",
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
           ]
+          FONT_FILE = next(f for f in FONT_CANDIDATES if f and os.path.exists(f))
+          GOLD = (255, 205, 110); BLUE = (110, 170, 255); RED = (255, 110, 140)
+          SOFT = (190, 180, 220); DIM = (90, 70, 110); WHITE = (255, 255, 255)
 
-          # 1. Narração em português (Piper)
-          subprocess.run(
-              ["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx",
-               "--output_file", "narracao.wav"],
-              input="\n".join(sentences).encode(), check=True)
 
-          # 2. Duração real do áudio
-          dur = float(subprocess.check_output(
-              ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-               "-of", "csv=p=0", "narracao.wav"]).decode().strip())
+          def font(s):
+              return ImageFont.truetype(FONT_FILE, s)
 
-          # 3. Legendas: divide o tempo pelo número de palavras de cada frase
-          def fmt(x):
-              h = int(x // 3600); m = int(x % 3600 // 60); s = x % 60
-              return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
 
-          words = [len(s.split()) for s in sentences]
-          total = sum(words)
-          t = 0.0
-          blocks = []
-          for i, (s, w) in enumerate(zip(sentences, words), 1):
-              d = dur * w / total
-              blocks.append(f"{i}\n{fmt(t)} --> {fmt(t + d)}\n{s}\n")
-              t += d
-          open("legenda.srt", "w", encoding="utf-8").write("\n".join(blocks))
+          def bg():
+              y = np.linspace(0, 1, H)[:, None]
+              top = np.array([14, 12, 40]); bot = np.array([58, 22, 70])
+              arr = (top + (bot - top) * y[..., None]).repeat(W, axis=1).reshape(H, W, 3)
+              im = Image.fromarray(arr.astype("uint8"))
+              d = ImageDraw.Draw(im)
+              rng = np.random.default_rng(7)
+              for _ in range(90):
+                  x, yy = int(rng.integers(0, W)), int(rng.integers(0, H)); r = int(rng.integers(1, 4))
+                  d.ellipse([x - r, yy - r, x + r, yy + r], fill=WHITE)
+              return im
 
-          # 4. Vídeo vertical 1080x1920 com fundo azul, áudio e legendas
-          subprocess.run([
-              "ffmpeg", "-y",
-              "-f", "lavfi", "-i", f"color=c=0x06122e:s=1080x1920:r=30:d={dur}",
-              "-i", "narracao.wav",
-              "-vf", "subtitles=legenda.srt:force_style='Fontsize=16,Alignment=2,MarginV=50,Bold=1,Outline=3'",
-              "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-              "-c:a", "aac", "short.mp4"], check=True)
-          print("pronto: short.mp4", round(dur, 1), "segundos")
+
+          def planet(im, cx, cy, r):
+              glow = Image.new("RGB", (W, H), (0, 0, 0)); g = ImageDraw.Draw(glow)
+              g.ellipse([cx - r * 1.25, cy - r * 1.25, cx + r * 1.25, cy + r * 1.25], fill=(120, 60, 20))
+              glow = glow.filter(ImageFilter.GaussianBlur(70))
+              im.paste(ImageChops.add(im, glow))
+              yy, xx = np.mgrid[0:2 * r, 0:2 * r]
+              dx = (xx - r) / r; dy = (yy - r) / r; m = dx * dx + dy * dy <= 1
+              z = np.sqrt(np.clip(1 - dx * dx - dy * dy, 0, 1))
+              light = np.clip(0.35 + 0.75 * (-dx * 0.5 - dy * 0.5 + z * 0.7), 0, 1.1)
+              band = 0.06 * np.sin(dy * 9 + dx * 2)
+              col = np.clip(np.array([236, 176, 92])[None, None, :] * (light + band)[..., None], 0, 255)
+              rgba = Image.fromarray(np.dstack([col, m * 255]).astype("uint8"), "RGBA")
+              im.paste(rgba, (cx - r, cy - r), rgba)
+
+
+          def heart(d, cx, cy, s, fill):
+              pts = []
+              for i in range(200):
+                  t = i / 200 * 2 * math.pi
+                  x = 16 * math.sin(t) ** 3
+                  y = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+                  pts.append((cx + x * s, cy - y * s))
+              d.polygon(pts, fill=fill)
+
+
+          def drop(d, cx, cy, s, fill):
+              d.ellipse([cx - s, cy - 0.2 * s, cx + s, cy + 1.8 * s], fill=fill)
+              d.polygon([(cx, cy - 1.6 * s), (cx - 0.92 * s, cy + 0.5 * s), (cx + 0.92 * s, cy + 0.5 * s)], fill=fill)
+
+
+          def text(d, lines, y, size, fill=WHITE):
+              # encolhe a fonte se a linha não couber na tela
+              for l in lines:
+                  s = size
+                  while d.textlength(l, font=font(s)) > W - 100 and s > 20:
+                      s -= 4
+                  f = font(s)
+                  d.text(((W - d.textlength(l, font=f)) / 2, y), l, font=f, fill=fill)
+                  y += size + 14
+
+
+          def brand(im):
+              d = ImageDraw.Draw(im); f = font(34); t = "curiosidades de ciência"
+              d.text(((W - d.textlength(t, font=f)) / 2, 1740), t, font=f, fill=SOFT)
+              return im
+
+
+          # ---------------- Short #01: Vênus ----------------
+          def venus(n):
+              im = bg(); d = ImageDraw.Draw(im)
+              if n == 1:
+                  planet(im, 540, 560, 280); d = ImageDraw.Draw(im)
+                  text(d, ["EM VÊNUS,"], 960, 110, GOLD)
+                  text(d, ["UM DIA DURA", "MAIS QUE", "UM ANO"], 1090, 120)
+              elif n == 2:
+                  planet(im, 540, 520, 230); d = ImageDraw.Draw(im)
+                  text(d, ["Uma volta em torno", "de si mesma leva"], 880, 78)
+                  text(d, ["243 dias"], 1100, 180, GOLD)
+                  text(d, ["terrestres"], 1330, 80)
+              elif n == 3:
+                  d.ellipse([140, 300, 940, 1100], outline=(110, 100, 160), width=6)
+                  d.ellipse([500, 660, 580, 740], fill=(255, 214, 120))
+                  d.ellipse([910 - 34, 700 - 34, 910 + 34, 700 + 34], fill=(236, 176, 92))
+                  text(d, ["Uma volta em torno", "do Sol leva"], 1180, 78)
+                  text(d, ["225 dias"], 1390, 180, GOLD)
+              elif n == 4:
+                  d.rounded_rectangle([140, 400, 940, 520], 30, fill=(236, 176, 92))
+                  d.text((170, 422), "DIA  243", font=font(70), fill=(30, 10, 40))
+                  d.rounded_rectangle([140, 640, 140 + int(800 * 225 / 243), 760], 30, fill=(120, 140, 255))
+                  d.text((170, 662), "ANO  225", font=font(70), fill=(10, 10, 40))
+                  text(d, ["O dia é maior", "que o ano."], 960, 110)
+                  text(d, ["Sim, de verdade."], 1330, 70, GOLD)
+              elif n == 5:
+                  planet(im, 540, 520, 230); d = ImageDraw.Draw(im)
+                  text(d, ["E o Sol nasce no"], 900, 84)
+                  text(d, ["OESTE"], 1020, 230, GOLD)
+                  text(d, ["Vênus gira ao contrário", "da maioria dos planetas."], 1330, 62)
+              else:
+                  planet(im, 540, 640, 200); d = ImageDraw.Draw(im)
+                  text(d, ["Gostou?"], 1000, 130, GOLD)
+                  text(d, ["Segue o canal", "para mais curiosidades", "de ciência"], 1200, 86)
+              return brand(im)
+
+
+          # ---------------- Short #02: Polvo ----------------
+          def polvo(n):
+              im = bg(); d = ImageDraw.Draw(im)
+              if n == 1:
+                  heart(d, 540, 420, 14, RED); heart(d, 260, 640, 9, RED); heart(d, 820, 640, 9, RED)
+                  text(d, ["POLVOS TÊM"], 1000, 110, GOLD)
+                  text(d, ["3 CORAÇÕES"], 1140, 130)
+              elif n == 2:
+                  heart(d, 540, 520, 10, DIM); heart(d, 260, 640, 10, BLUE); heart(d, 820, 640, 10, BLUE)
+                  text(d, ["Dois levam o sangue", "às brânquias"], 960, 78)
+                  text(d, ["para pegar oxigênio"], 1230, 62, SOFT)
+              elif n == 3:
+                  heart(d, 540, 520, 14, RED); heart(d, 260, 720, 7, DIM); heart(d, 820, 720, 7, DIM)
+                  text(d, ["O terceiro manda o", "sangue para o"], 1000, 78)
+                  text(d, ["corpo todo"], 1220, 120, GOLD)
+              elif n == 4:
+                  drop(d, 540, 430, 170, BLUE)
+                  text(d, ["E o sangue deles"], 1000, 84)
+                  text(d, ["é AZUL"], 1120, 230, BLUE)
+                  text(d, ["Tem cobre, não ferro."], 1440, 62, SOFT)
+              elif n == 5:
+                  heart(d, 540, 520, 14, RED)
+                  text(d, ["Quando o polvo nada,", "o coração principal"], 960, 76)
+                  text(d, ["PARA"], 1180, 230, GOLD)
+                  text(d, ["Por isso ele prefere rastejar."], 1470, 56, SOFT)
+              else:
+                  heart(d, 540, 560, 12, RED)
+                  text(d, ["Gostou?"], 1000, 130, GOLD)
+                  text(d, ["Segue o canal", "para mais curiosidades", "de ciência"], 1200, 86)
+              return brand(im)
+
+
+          FIM = "Gostou? Segue o canal para mais curiosidades de ciência."
+          VIDEOS = {
+              "short-01-venus": (venus, [
+                  "Em Vênus, um dia dura mais que um ano.",
+                  "Vênus gira tão devagar que uma volta em torno de si mesma leva cerca de duzentos e quarenta e três dias terrestres.",
+                  "Mas ela dá a volta ao redor do Sol em apenas duzentos e vinte e cinco dias.",
+                  "Ou seja, o dia é maior que o ano. Sim, de verdade.",
+                  "E tem mais: Vênus gira ao contrário da maioria dos planetas, então lá o Sol nasce no oeste.",
+                  FIM]),
+              "short-02-polvo": (polvo, [
+                  "Polvos têm três corações.",
+                  "Dois deles levam o sangue às brânquias, para pegar oxigênio.",
+                  "O terceiro manda o sangue para o corpo todo.",
+                  "E o sangue deles é azul, porque tem cobre, e não ferro.",
+                  "Quando o polvo nada, o coração principal para de bater. Por isso ele prefere rastejar.",
+                  FIM]),
+          }
+          POSTS = {
+              "short-01-venus": "TÍTULO:\nEm Vênus, um dia dura MAIS que um ano 🤯 #Shorts\n\nDESCRIÇÃO:\nVênus leva cerca de 243 dias terrestres para dar uma volta em torno de si mesma, mas só 225 dias para dar a volta ao redor do Sol. Ou seja: lá, o dia é maior que o ano! E ainda gira ao contrário da maioria dos planetas, então o Sol nasce no oeste.\n\nSegue o canal para mais curiosidades de ciência!\n\n#Shorts #Ciência #Curiosidades #Vênus #Espaço #Astronomia\n",
+              "short-02-polvo": "TÍTULO:\nPolvos têm 3 corações e sangue AZUL 🐙 #Shorts\n\nDESCRIÇÃO:\nO polvo tem três corações: dois levam o sangue às brânquias e o terceiro manda o sangue para o resto do corpo. O sangue dele é azul porque usa cobre, e não ferro, para carregar oxigênio. Quando o polvo nada, o coração principal para de bater, por isso ele prefere rastejar.\n\nSegue o canal para mais curiosidades de ciência!\n\n#Shorts #Ciência #Curiosidades #Polvo #Animais #Oceano\n",
+          }
+
+
+          def run(cmd, **kw):
+              subprocess.run(cmd, check=True, **kw)
+
+
+          def duration(path):
+              return float(subprocess.check_output(
+                  ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]).decode().strip())
+
+
+          def narrar(texto, saida):
+              if os.environ.get("STUB_TTS"):  # só para teste local, sem voz de verdade
+                  n = len(texto.split()); sr = 22050
+                  with wave.open(saida, "w") as w:
+                      w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+                      w.writeframes(np.zeros(int(sr * 0.4 * n), dtype="int16").tobytes())
+                  return
+              run(["python3", "-m", "piper", "--model", "pt_BR-faber-medium.onnx", "--output_file", saida],
+                  input=texto.encode())
+
+
+          def musica(total, saida):
+              sr = 44100; t = np.arange(int(sr * total)) / sr
+              chords = [(110, 164.8, 220), (98, 146.8, 196), (87.3, 130.8, 174.6), (98, 146.8, 196)]
+              sig = np.zeros_like(t)
+              for i, ch in enumerate(chords):
+                  a, b = i * total / 4, (i + 1) * total / 4
+                  seg = (t >= a) & (t < b)
+                  env = np.clip(np.minimum((t - a) / 1.5, (b - t) / 1.5), 0, 1)
+                  for f in ch:
+                      sig += seg * env * np.sin(2 * np.pi * f * t + 0.3 * np.sin(2 * np.pi * 0.2 * t)) * 0.12
+              sig *= np.clip(np.minimum(t / 2, (total - t) / 2), 0, 1)
+              with wave.open(saida, "w") as w:
+                  w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+                  w.writeframes((sig / np.abs(sig).max() * 0.5 * 32767).astype("int16").tobytes())
+
+
+          def montar(nome, fn, falas):
+              os.makedirs(nome, exist_ok=True)
+              lista = []
+              for i, fala in enumerate(falas, 1):
+                  wav = f"{nome}/n{i}.wav"; png = f"{nome}/c{i}.png"; mp4 = f"{nome}/c{i}.mp4"
+                  narrar(fala, wav)
+                  dur = round(duration(wav) + 0.9, 2)  # 0,3 s antes da fala e 0,6 s depois
+                  fn(i).save(png)
+                  run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", png, "-i", wav,
+                       "-vf", f"format=yuv420p,loop=-1:1,trim=duration={dur},fade=t=in:st=0:d=0.3,fade=t=out:st={dur - 0.3}:d=0.3",
+                       "-af", f"adelay=300|300,apad,atrim=duration={dur}",
+                       "-c:v", "libx264", "-crf", "18", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-r", "30",
+                       "-c:a", "aac", "-ar", "44100", "-ac", "1", "-t", str(dur), mp4])
+                  lista.append(f"file 'c{i}.mp4'")
+              open(f"{nome}/lista.txt", "w").write("\n".join(lista))
+              run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", f"{nome}/lista.txt",
+                   "-c", "copy", f"{nome}/base.mp4"])
+              total = duration(f"{nome}/base.mp4")
+              musica(total, f"{nome}/musica.wav")
+              run(["ffmpeg", "-y", "-loglevel", "error", "-i", f"{nome}/base.mp4", "-i", f"{nome}/musica.wav",
+                   "-filter_complex", "[1:a]volume=0.22[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]",
+                   "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", f"{nome}.mp4"])
+              open(f"{nome}.txt", "w", encoding="utf-8").write(POSTS[nome])
+              print("pronto:", nome, round(total, 1), "segundos")
+
+
+          if __name__ == "__main__":
+              for nome, (fn, falas) in VIDEOS.items():
+                  montar(nome, fn, falas)
           PY
-      - name: Guardar o vídeo
+      - name: Guardar os vídeos
         uses: actions/upload-artifact@v4
         with:
-          name: short-01
-          path: short.mp4
+          name: shorts-prontos
+          path: |
+            short-01-venus.mp4
+            short-01-venus.txt
+            short-02-polvo.mp4
+            short-02-polvo.txt
+      - name: Publicar os vídeos num link público
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="lote-${{ github.run_number }}"
+          BASE="${{ github.server_url }}/${{ github.repository }}/releases/download/$TAG"
+          gh release create "$TAG" short-*.mp4 short-*.txt --repo "${{ github.repository }}" --title "Shorts $TAG" --notes "Vídeos prontos para postar. Links: $BASE/short-01-venus.mp4 e $BASE/short-02-polvo.mp4"
+          echo "Venus: $BASE/short-01-venus.mp4"
+          echo "Polvo: $BASE/short-02-polvo.mp4"
